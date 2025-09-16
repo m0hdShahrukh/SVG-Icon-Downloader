@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 
 // Main App Component
 export default function App() {
@@ -8,45 +8,26 @@ export default function App() {
   // State for any error messages
   const [error, setError] = useState('');
 
-  // State to trigger the automatic download on paste
-  const [downloadOnPaste, setDownloadOnPaste] = useState(false);
-
   // Ref for the hidden anchor tag to trigger download
   const downloadLinkRef = useRef(null);
 
   // --- Handlers ---
 
   /**
-   * Handles changes in the textarea, updating the svgCode state.
-   * @param {React.ChangeEvent<HTMLTextAreaElement>} e - The event object.
+   * Central function to handle the download logic.
+   * Wrapped in useCallback for performance optimization.
    */
-  const handleCodeChange = (e) => {
-    setError(''); // Clear any previous errors
-    setSvgCode(e.target.value);
-  };
-
-  /**
-   * Sets a flag to true when the user pastes content.
-   * This will be used by the useEffect hook to trigger a download.
-   */
-  const handlePaste = () => {
-    setDownloadOnPaste(true);
-  };
-
-  /**
-   * Triggers the download of the SVG file.
-   */
-  const handleDownload = () => {
+  const downloadSvg = useCallback((codeToDownload) => {
     // Basic validation: check if the code is empty or doesn't look like an SVG.
-    if (!svgCode.trim() || !svgCode.trim().startsWith('<svg')) {
-      setError('Please enter valid SVG code starting with <svg>.');
+    if (!codeToDownload || !codeToDownload.trim().startsWith('<svg')) {
+      setError('Please provide valid SVG code starting with <svg>.');
       return;
     }
     
     setError('');
 
     // Create a Blob from the SVG string. A Blob is a file-like object of immutable, raw data.
-    const blob = new Blob([svgCode], { type: 'image/svg+xml' });
+    const blob = new Blob([codeToDownload], { type: 'image/svg+xml' });
 
     // Create a URL for the Blob object.
     const url = URL.createObjectURL(blob);
@@ -61,30 +42,38 @@ export default function App() {
 
     // Release the created URL to free up memory.
     URL.revokeObjectURL(url);
-  };
-
-  // --- Effects ---
+  }, []); // Empty dependency array means this function is created only once.
 
   /**
-   * This effect runs when the component mounts or when svgCode/downloadOnPaste state changes.
-   * It handles the automatic download functionality after a paste event.
+   * Handles changes in the textarea, updating the svgCode state.
+   * @param {React.ChangeEvent<HTMLTextAreaElement>} e - The event object.
    */
-  useEffect(() => {
-    // If the downloadOnPaste flag is set, it means a paste just happened.
-    if (downloadOnPaste) {
-      // We use a short timeout to ensure the 'svgCode' state has been updated
-      // from the paste event before we try to download it.
-      setTimeout(() => {
-        if (svgCode.trim().startsWith('<svg')) {
-          handleDownload();
-        } else {
-          setError('Pasted content is not valid SVG code.');
-        }
-        // Reset the flag so it doesn't download again on subsequent renders
-        setDownloadOnPaste(false);
-      }, 100); // 100ms delay is usually enough
-    }
-  }, [svgCode, downloadOnPaste, handleDownload]); // Dependencies for the effect
+  const handleCodeChange = (e) => {
+    setError(''); // Clear any previous errors
+    setSvgCode(e.target.value);
+  };
+
+  /**
+   * Handles the paste event, updates state, and triggers an immediate download.
+   * This is the core of the fix.
+   */
+  const handlePaste = (e) => {
+    // Prevent the default paste behavior which could interfere.
+    e.preventDefault();
+    // Get the text directly from the clipboard.
+    const pastedText = e.clipboardData.getData('text');
+    // Update the state so the user sees the new code in the textarea.
+    setSvgCode(pastedText);
+    // Trigger the download with the guaranteed-correct pasted text.
+    downloadSvg(pastedText);
+  };
+
+  /**
+   * Triggers a manual download using the current SVG code from the state.
+   */
+  const handleManualDownload = () => {
+    downloadSvg(svgCode);
+  };
 
   // --- Render ---
 
@@ -108,13 +97,13 @@ export default function App() {
               id="svg-code-input"
               value={svgCode}
               onChange={handleCodeChange}
-              onPaste={handlePaste} // This triggers the auto-download flow
+              onPaste={handlePaste} // This triggers the new, reliable auto-download flow
               placeholder="<svg>...</svg>"
               className="w-full flex-grow p-4 bg-gray-800 border-2 border-gray-700 rounded-lg text-gray-200 font-mono text-sm focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition-all duration-300 resize-none"
             />
             <button
-              onClick={handleDownload}
-              className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-cyan-400 flex items-center justify-center gap-2"
+              onClick={handleManualDownload}
+              className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-3 px-4 rounded-lg transition-transform duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 focus:ring-cyan-400 flex items-center justify-center gap-2"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Manual Download
@@ -147,3 +136,4 @@ export default function App() {
     </div>
   );
 }
+
